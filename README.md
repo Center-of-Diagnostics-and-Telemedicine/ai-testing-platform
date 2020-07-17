@@ -20,11 +20,11 @@ The main features are:
 * standardisation of metrics, building ROC-curves and performing the real-time assessment.
 
 ## Credits
-* Nikolay Pavlov, CDO, Research and Practical Clinical Center of Diagnostics and Telemedicine Technologies, Department of Health Care of Moscow (n.pavlov@npcmr.ru).
-* Anna Andreychenko, Head of Sector for Medical Informatics, Radiomics and Radiogenomics, Research and Practical Clinical Center of Diagnostics and Telemedicine Technologies, Department of Health Care of Moscow (a.andreychenko@npcmr.ru).
-* Sergey Morozov, CEO, Radiomics and Radiogenomics, Research and Practical Clinical Center of Diagnostics and Telemedicine Technologies, Department of Health Care of Moscow (a.andreychenko@npcmr.ru).
+* Nikolay Pavlov<sup name="a1">[1](#f1)</sup>, MD, MPA (n.pavlov@npcmr.ru);
+* Anna Andreychenko<sup name="a1">[1](#f1)</sup>, PhD (a.andreychenko@npcmr.ru);
+* Sergey Morozov<sup name="a1">[1](#f1)</sup>, MD, PhD, MPH, CIIP (morozov@npcmr.ru).
 
-1 – 
+<span id="f1">\[1\]</span> – [Research and Practical Clinical Center of Diagnostics and Telemedicine Technologies](https://tele-med.ai), Department of Health Care of Moscow, Russia
 
 ## Version
 0.1 (alpha).
