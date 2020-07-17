@@ -21,3 +21,6 @@ The main features are:
 
 ## Credits
 Nikolay Pavlov, CDO, Research and Practical Clinical Center of Diagnostics and Telemedicine Technologies, Department of Health Care of Moscow (n.pavlov@npcmr.ru).
+
+## License
+This code is licensed under the [Apache License 2.0](LICENSE).
