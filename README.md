@@ -19,6 +19,14 @@ The main features are:
 * registration of the time spent on the processing of a single element of the reference database;
 * standardisation of metrics, building ROC-curves and performing the real-time assessment.
 
+## Database Schema
+```SQL
+CREATE TABLE services (id INTEGER NOT NULL PRIMARY KEY, name VARCHAR(100), token VARCHAR(64));
+CREATE TABLE session_tokens (id INTEGER NOT NULL PRIMARY KEY, service INTEGER, session_token VARCHAR(64), issue_date TIMESTAMP, expiry_date TIMESTAMP, active BOOLEAN);
+CREATE TABLE testing (id INTEGER NOT NULL PRIMARY KEY, session INTEGER, dataset_title TEXT, dataset_file_id INTEGER, created TIMESTAMP, retrieved TIMESTAMP, received TIMESTAMP, ai_ct INTEGER, ai_left_affected_part FLOAT, ai_left_total_volume FLOAT, ai_left_affected_volume FLOAT, ai_right_affected_part FLOAT, ai_right_total_volume FLOAT, ai_right_affected_volume FLOAT, viewer_url VARCHAR(200), description VARCHAR(300), requests INTEGER);
+CREATE TABLE datasets(id INTEGER NOT NULL PRIMARY KEY, title TEXT, filename TEXT, var1 VARCHAR(30), var2 VARCHAR(30), var3 VARCHAR(30), var4 VARCHAR(30), var5 VARCHAR(30), added TIMESTAMP);
+```
+
 ## Credits
 * Nikolay Pavlov<sup name="a1">[1](#f1)</sup>, MD, MPA (n.pavlov@npcmr.ru);
 * Anna Andreychenko<sup name="a1">[1](#f1)</sup>, PhD (a.andreychenko@npcmr.ru);
