@@ -1,41 +1,9 @@
 from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort
 import json, uuid, re, pandas as pd, numpy as np
 
-import sqlite3
-from sqlite3 import Error
+
+from db import create_connection, execute_query, execute_read_query
  
-def create_connection(path):
-    connection = None
-    try:
-        connection = sqlite3.connect(path)
-        print("Connection to SQLite DB successful")
-    except Error as e:
-        print(f"The error '{e}' occurred")
-
-    return connection
-
-conn = create_connection('aitesting.db')
-
-def execute_query(connection, query):
-    cursor = connection.cursor()
-    try:
-        cursor.execute(query)
-        connection.commit()
-        print("Query executed successfully: " + query)
-    except Error as e:
-        print(f"The error '{e}' occurred")
-
-    return cursor.lastrowid
-
-def execute_read_query(connection, query):
-    cursor = connection.cursor()
-    result = None
-    try:
-        cursor.execute(query)
-        result = cursor.fetchall()
-        return result
-    except:
-        return("The error occurred")
 
 def set_ai_value(data, parent=None, child=None):
     if parent is None:
@@ -71,21 +39,23 @@ def set_session_token():
     except Exception:
         abort(400, 'POST request content is incorrect (should contain name, token, dataset)')
 
-    service = execute_read_query(conn, f"SELECT id,token FROM services WHERE name='{service_name}' LIMIT 1;")
+    with create_connection() as conn:
+        print(service_name)
+        service = execute_read_query(conn, f"SELECT id,token FROM services WHERE name='{service_name}' LIMIT 1;")
 
     # check for empty response
-    if (len(service) == 0):
+    if (len(service) == 0) or service[0][1] != token:
         abort(401, 'Incorrect name or token')
 
     # take only first row
     service = service[0]
-    
+
     # insert new session_token:
     try:
-        if service[1] == token:
+        with create_connection() as conn:
             # first make all previous session inactive:
             execute_query(conn, f"UPDATE session_tokens SET active=FALSE WHERE service='{service[0]}';")
-            
+        
             # generate session_token
             session_token = uuid.uuid4()
 
@@ -97,31 +67,30 @@ def set_session_token():
                     ('{service[0]}', '{session_token}', datetime('now'), datetime('now', '1 days'), TRUE);
                 """
             session = execute_query(conn, create_users)
-        else:
-            abort()
+
     except:
         abort(401, 'Incorrect name or token')
 
+    with create_connection() as conn:
+        # get list of ids for selected datasets
+        ds = pd.read_sql_query(f"SELECT id, title FROM datasets WHERE title LIKE '{dataset}'", conn)
 
-    # get list of ids for selected datasets
-    ds = pd.read_sql_query(f"SELECT id, title FROM datasets WHERE title LIKE '{dataset}'", conn)
+        # check for empty response
+        if len(ds.index) == 0:
+            abort(404, 'Dataset not found')
 
-    # check for empty response
-    if len(ds.index) == 0:
-        abort(404, 'Dataset not found')
+        # shuffle list
+        ids = ds.loc[ds.title==dataset].id.astype('int').sample(frac=1).to_list()
 
-    # shuffle list
-    ids = ds.loc[ds.title==dataset].id.astype('int').sample(frac=1).to_list()
-
-    # add testing items to testing table
-    for f in ids:
-        create_list = f"""
-                INSERT INTO testing 
-                    (session, dataset_title, dataset_file_id, created, requests) 
-                VALUES 
-                    ('{session}', '{dataset}', '{f}', datetime('now'), 0);
-                """
-        execute_query(conn, create_list)
+        # add testing items to testing table
+        for f in ids:
+            create_list = f"""
+                    INSERT INTO testing 
+                        (session, dataset_title, dataset_file_id, created, requests) 
+                    VALUES 
+                        ('{session}', '{dataset}', '{f}', datetime('now'), 0);
+                    """
+            execute_query(conn, create_list)
 
     return jsonify(
         session_token=str(session_token),
@@ -139,24 +108,25 @@ def pull_study():
     except Exception:
         abort(400, 'POST request content is incorrect (should contain name, session_token).')
 
-    # check is_active and not is_expired
-    session = check_token(conn, service_name, session_token)
+    with create_connection() as conn:
+        # check is_active and not is_expired
+        session = check_token(conn, service_name, session_token)
 
-    # retrieve first empty row inside session
-    ds = pd.read_sql_query(f"""
-        SELECT 
-            t.id AS id,
-            t.requests AS requests,
-            t.dataset_title AS dataset_title,
-            d.filename AS filename
-        FROM testing AS t
-        LEFT JOIN datasets AS d
-            ON t.dataset_file_id=d.id
-        WHERE t.received IS NULL 
-            AND t.session = {session} 
-        ORDER BY t.id LIMIT 1
-    
-    """, conn)
+        # retrieve first empty row inside session
+        ds = pd.read_sql_query(f"""
+            SELECT 
+                t.id AS id,
+                t.requests AS requests,
+                t.dataset_title AS dataset_title,
+                d.filename AS filename
+            FROM testing AS t
+            LEFT JOIN datasets AS d
+                ON t.dataset_file_id=d.id
+            WHERE t.received IS NULL 
+                AND t.session = {session} 
+            ORDER BY t.id LIMIT 1
+        
+        """, conn)
 
     # check for empty response
     if len(ds.index) == 0:
@@ -164,7 +134,6 @@ def pull_study():
     else:
         ds = ds.iloc[0]
     
-
     # update time of retrieval
     update_time_of_retrieval = f"""
         UPDATE testing 
@@ -200,99 +169,101 @@ def push_study():
         abort(400, 'POST request content is incorrect (should contain service_name, session_token, testing_item_id, ai_ct, [ai_left_affected_part], [ai_left_total_volume], [ai_left_affected_volume], [ai_right_affected_part], [ai_right_total_volume], [ai_right_affected_volume], [viewer_url], [description]}).'+str(e))
 
   
+    with create_connection() as conn:
+        # check is_active and not is_expired
+        session = check_token(conn, service_name, session_token)
 
-    # check is_active and not is_expired
-    session = check_token(conn, service_name, session_token)
+        # retrieve all available rows
+        ds = pd.read_sql_query(f"""
+            SELECT 
+                COUNT(*) as testing_items_count
+            FROM testing
+            WHERE received IS NULL 
+                AND session = {session}     
+        """, conn)
 
-    # retrieve all available rows
-    ds = pd.read_sql_query(f"""
-        SELECT 
-            COUNT(*) as testing_items_count
-        FROM testing
-        WHERE received IS NULL 
-            AND session = {session}     
-    """, conn)
+        # check for empty response
+        if len(ds.index) == 0:
+            abort(404, 'No available items for this session_token')
+        else:
+            testing_items_count = str(ds.iloc[0]['testing_items_count'])
 
-    # check for empty response
-    if len(ds.index) == 0:
-        abort(404, 'No available items for this session_token')
-    else:
-        testing_items_count = str(ds.iloc[0]['testing_items_count'])
+        # retrieve right row inside session
+        ds = pd.read_sql_query(f"""
+            SELECT 
+                t.id AS id
+            FROM testing AS t
+            LEFT JOIN datasets AS d
+                ON t.dataset_file_id=d.id
+            WHERE t.received IS NULL
+                AND d.filename = '{testing_item_id + '.zip'}'
+                AND t.session = {session} 
+            ORDER BY t.id LIMIT 1
+        
+        """, conn)
 
-    # retrieve right row inside session
-    ds = pd.read_sql_query(f"""
-        SELECT 
-            t.id AS id
-        FROM testing AS t
-        LEFT JOIN datasets AS d
-            ON t.dataset_file_id=d.id
-        WHERE t.received IS NULL
-            AND d.filename = '{testing_item_id + '.zip'}'
-            AND t.session = {session} 
-        ORDER BY t.id LIMIT 1
-    
-    """, conn)
+        # check for empty response
+        if len(ds.index) == 0:
+            abort(404, 'Testing item not found; testing items still available: ' + testing_items_count)
+        else:
+            ds = ds.iloc[0]
 
-    # check for empty response
-    if len(ds.index) == 0:
-        abort(404, 'Testing item not found; testing items still available: ' + testing_items_count)
-    else:
-        ds = ds.iloc[0]
+        # update time of retrieval
+        update_response = f"""
+            UPDATE testing 
+            SET
+                received=datetime('now'),
+                ai_ct = '{ai_ct}',
+                ai_left_affected_part = '{ai_left_affected_part}',
+                ai_left_total_volume = '{ai_left_total_volume}',
+                ai_left_affected_volume = '{ai_left_affected_volume}',
+                ai_right_affected_part = '{ai_right_affected_part}',
+                ai_right_total_volume = '{ai_right_total_volume}',
+                ai_right_affected_volume = '{ai_right_affected_volume}',
+                viewer_url = '{viewer_url}',
+                description = '{description}'
+            WHERE id={ds.id};
+            """
+        updated_item = execute_query(conn, update_response)
 
-    # update time of retrieval
-    update_response = f"""
-        UPDATE testing 
-        SET
-            received=datetime('now'),
-            ai_ct = '{ai_ct}',
-            ai_left_affected_part = '{ai_left_affected_part}',
-            ai_left_total_volume = '{ai_left_total_volume}',
-            ai_left_affected_volume = '{ai_left_affected_volume}',
-            ai_right_affected_part = '{ai_right_affected_part}',
-            ai_right_total_volume = '{ai_right_total_volume}',
-            ai_right_affected_volume = '{ai_right_affected_volume}',
-            viewer_url = '{viewer_url}',
-            description = '{description}'
-        WHERE id={ds.id};
-        """
-    updated_item = execute_query(conn, update_response)
+        # retrieve all available rows
+        ds = pd.read_sql_query(f"""
+            SELECT 
+                CAST ((julianday(received)-julianday(retrieved)) * 24 * 60 * 60 AS INTEGER) AS diff_time
+            FROM testing
+            WHERE id={ds.id}     
+        """, conn)
 
-    # retrieve all available rows
-    ds = pd.read_sql_query(f"""
-        SELECT 
-            CAST ((julianday(received)-julianday(retrieved)) * 24 * 60 * 60 AS INTEGER) AS diff_time
-        FROM testing
-        WHERE id={ds.id}     
-    """, conn)
+        # check for empty response
+        if len(ds.index) == 0:
+            abort(404, 'Testing item not found; testing items still available: ' + testing_items_count)
+        else:
+            diff_time = str(ds.iloc[0]['diff_time'])
 
-    # check for empty response
-    if len(ds.index) == 0:
-        abort(404, 'Testing item not found; testing items still available: ' + testing_items_count)
-    else:
-        diff_time = str(ds.iloc[0]['diff_time'])
+        return jsonify(
+            message='Results for testing_item_id=' + testing_item_id + ' have been accepted',
+            time_to_response=f'{diff_time}s'
+        ), 200
 
-    return jsonify(
-        message='Results for testing_item_id=' + testing_item_id + ' have been accepted',
-        time_to_response=f'{diff_time}s'
-    ), 200
 
 def check_token(conn, service_name, session_token):
-    session_info = f"""
-        SELECT 
-            CASE WHEN 
-                CAST(julianday('now')-julianday(st.expiry_date) AS TYPE FLOAT) < 0 
-                THEN 0 
-                ELSE 1 
-            END AS is_expired,
-            st.id AS session_id,
-            st.active AS is_active
-        FROM session_tokens AS st 
-        LEFT JOIN services 
-            AS s ON s.id=st.service 
-        WHERE s.name LIKE '{service_name}' 
-            AND st.session_token LIKE '{session_token}';
-        """
-    ds = pd.read_sql_query(session_info, conn)
+    with create_connection() as conn:
+        session_info = f"""
+            SELECT 
+                CASE WHEN 
+                    CAST(julianday('now')-julianday(st.expiry_date) AS TYPE FLOAT) < 0 
+                    THEN 0 
+                    ELSE 1 
+                END AS is_expired,
+                st.id AS session_id,
+                st.active AS is_active
+            FROM session_tokens AS st 
+            LEFT JOIN services 
+                AS s ON s.id=st.service 
+            WHERE s.name LIKE '{service_name}' 
+                AND st.session_token LIKE '{session_token}';
+            """
+        ds = pd.read_sql_query(session_info, conn)
     
     # check for empty response
     if len(ds.index) == 0:
@@ -343,4 +314,4 @@ def api_500(error_message):
 	), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', port=5000)
