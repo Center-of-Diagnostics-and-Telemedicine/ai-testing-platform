@@ -1,5 +1,7 @@
 from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort
 import json, uuid, re, pandas as pd, numpy as np
+import cv2
+import base64
 
 
 from db import create_connection, execute_query, execute_read_query
@@ -245,7 +247,6 @@ def push_study():
             time_to_response=f'{diff_time}s'
         ), 200
 
-
 def check_token(conn, service_name, session_token):
     with create_connection() as conn:
         session_info = f"""
@@ -283,6 +284,57 @@ def check_token(conn, service_name, session_token):
 
     return np.int32(ds.session_id)
 
+#––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+from calc_metrics import apply_all_metrics, make_csv_file, write_tmp_bytes_return_tmp_path
+
+@app.route('/push_mask', methods=['POST'])
+def push_mask():
+    """
+        receives json and returns json
+    """
+    try:
+        data = request.json
+        return_type = data['return_type'] # json / csv file
+        input_type = data['input_type']
+
+        mask_1 = None
+        mask_2 = None
+        if input_type == 'list':
+            mask_1 = np.array(data['mask_1']).astype(np.uint8)
+            mask_2 = np.array(data['mask_2']).astype(np.uint8)
+        elif input_type == 'base64':
+            mask_1 = cv2.imread(write_tmp_bytes_return_tmp_path(base64.b64decode(data['mask_1'])),0)
+            mask_1 = np.where(mask_1 > 1, 1, mask_1)
+            mask_2 = cv2.imread(write_tmp_bytes_return_tmp_path(base64.b64decode(data['mask_2'])),0)
+            mask_2 = np.where(mask_2 > 1, 1, mask_2)
+
+        else:
+            abort(400, f'Not supported input type: {input_type}')
+
+    except Exception as e:
+        abort(400, 'POST request content is incorrect (should contain return_type, input_type, mask1, mask2).'+str(e))
+
+    if return_type == 'json':
+        return jsonify(
+            message='Comparison result for two masks: ',
+            metrics=apply_all_metrics(mask_1, mask_2, 'dict')
+        ), 200
+
+    elif return_type == 'csv':
+        tmp_file = make_csv_file(mask_1, mask_2)
+        resp = make_response(send_file(tmp_file, 'application/csv'))
+        resp.headers['filename'] = 'metrics.csv'
+        return(resp)
+
+    else:
+        abort(400, f'{return_type} is not supported as return_type')
+
+
+
+
+
+#––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.errorhandler(400)
 def api_400(error_message):
 	return jsonify(

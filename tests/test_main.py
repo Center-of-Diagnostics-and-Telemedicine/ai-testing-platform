@@ -1,15 +1,20 @@
 import os
+import io
 import time
 import json
 import socket
+import base64
 import psutil
 import shutil
 import sqlite3
 import tempfile
 import requests
 import subprocess
+import numpy as np
+import pandas as pd
 
 
+from calc_metrics import write_img_return_base64
 from db import empty_db, execute_query, execute_read_query, create_connection
 
 
@@ -126,7 +131,22 @@ def push(base_url, name, session_token, testing_item_id):
     }
     return requests.post(base_url + '/push', json=data).json()
     
+def push_mask(base_url, return_type='json', input_type='list'):
+    mask_1 = np.zeros((100, 100)).astype(int)
+    mask_2 = mask_1
+    data = {
+        'return_type': return_type,
+        'input_type': input_type,
+    }
+    if input_type == 'list':
+        data['mask_1'] = mask_1.tolist()
+        data['mask_2'] = mask_2.tolist()
 
+    elif input_type == 'base64':
+        data['mask_1'] = write_img_return_base64(mask_1)
+        data['mask_2'] = write_img_return_base64(mask_2)
+
+    return requests.post(base_url + '/push_mask', json=data)
 
 
 class Test_main:
@@ -214,3 +234,28 @@ class Test_main:
         pull_responce = pull(self.base_url, self.name, auth_responce['session_token'])
         assert 'No available items for this session_token' in pull_responce.json()['error_message']
 
+    def test_push_mask_json_send_list(self):
+        responce = push_mask(self.base_url, return_type='json', input_type='list').json()
+        assert 'metrics' in responce
+        assert isinstance(responce['metrics'], dict)
+
+    def test_push_mask_csv_send_list(self):
+        responce = push_mask(self.base_url, return_type='csv', input_type='list')
+        assert 'filename' in responce.headers
+        assert 'metrics.csv' == responce.headers['filename']
+        assert len(responce.content) > 0
+        df = pd.read_csv(io.BytesIO(responce.content), encoding='utf-8')
+        assert df.shape[1] > 1
+
+    def test_push_mask_json_send_base64(self):
+        responce = push_mask(self.base_url, return_type='json', input_type='base64').json()
+        assert 'metrics' in responce
+        assert isinstance(responce['metrics'], dict)
+
+    def test_push_mask_csv_send_base64(self):
+        responce = push_mask(self.base_url, return_type='csv', input_type='base64')
+        assert 'filename' in responce.headers
+        assert 'metrics.csv' == responce.headers['filename']
+        assert len(responce.content) > 0
+        df = pd.read_csv(io.BytesIO(responce.content), encoding='utf-8')
+        assert df.shape[1] > 1
