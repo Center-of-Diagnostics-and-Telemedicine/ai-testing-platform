@@ -1,4 +1,4 @@
-from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort, flash, request, redirect, url_for, render_template
+from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort, flash, request, redirect, url_for, render_template, Response
 import json, uuid, re, pandas as pd, numpy as np
 import cv2
 import base64
@@ -388,7 +388,13 @@ def calc_metrics_func():
     metrics = data.values.tolist()
     html_table = pretty_html_table.build_table(data, 'blue_light')
     return html_table
-    
+
+@app.route("/ui/get", methods=['GET'])
+def getcsv():
+    return send_file('metrics_res.csv',
+                        mimetype='text/csv',
+                        attachment_filename='metrics_res.csv',
+                        as_attachment=True)
 
 #––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.errorhandler(400)

@@ -10,12 +10,32 @@
                     contentType: false,
                     cache: false,
                     processData: false,
+                    beforeSend: function() {
+                        $("#place_for_metrics").html('<img src="/static/ajax-loader.gif" alt="Wait..." style="position:absolute;left:50%;"/>');
+                    },
+                    error: function() {
+                        $("#place_for_metrics").html('<h3>cant compare, need 2 masks</h3>');
+                    },
                     success: function(response) {
                         $("#place_for_metrics").html(response);
-                      },
-                      error: function(xhr) {
-                        //Do Something to handle error
-                      }
+                    },
+                });
+            });
+        });
+</script>
+
+<script type=text/javascript>
+        $(function() {
+            $('#get_csv').click(function() {
+                $.ajax({
+                    type: 'GET',
+                    url: '/ui/get',
+                    contentType: false,
+                    cache: false,
+                    processData: false,
+                    success: function(response) {
+                        console.log("csv download");
+                    },
                 });
             });
         });
@@ -58,9 +78,8 @@
 </form>
 
 <button id="calc_metrics_func" type="button">Compare masks</button>
-
+<a href="/ui/get" target="/ui"><button class='btn btn-default'>Download csv</button></a>
 <div id="place_for_metrics"></div>
-
 </body>
 {% endblock %}
 
