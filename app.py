@@ -1,7 +1,13 @@
-from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort
+from flask import Flask, request, make_response, send_file, send_from_directory, jsonify, abort, flash, request, redirect, url_for, render_template
 import json, uuid, re, pandas as pd, numpy as np
 import cv2
 import base64
+import os
+import urllib.request
+from werkzeug.utils import secure_filename
+import pandas as pd
+import pretty_html_table
+
 
 
 from db import create_connection, execute_query, execute_read_query
@@ -286,7 +292,7 @@ def check_token(conn, service_name, session_token):
 
 #––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
-from calc_metrics import apply_all_metrics, make_csv_file, write_tmp_bytes_return_tmp_path
+from calc_metrics import apply_all_metrics, make_csv_file, write_tmp_bytes_return_tmp_path, get_metrics
 
 @app.route('/push_mask', methods=['POST'])
 def push_mask():
@@ -330,9 +336,59 @@ def push_mask():
     else:
         abort(400, f'{return_type} is not supported as return_type')
 
+UPLOAD_FOLDER = 'static\\uploads\\'
+app.config['UPLOAD_PATH'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.bmp', '.jpeg']
 
+@app.route('/ui')
+def init_index():
+    files = os.listdir(app.config['UPLOAD_PATH'])
+    for f in files:
+        os.remove(os.path.join(app.config['UPLOAD_PATH'], f))
+    return render_template('index.html')
 
+@app.route('/static/uploads/<filename>')
+def upload(filename):
+    return send_from_directory(app.config['UPLOAD_PATH'], filename)
 
+@app.route('/ui', methods=['POST'])
+def upload_files():
+    uploaded_file = request.files['file']
+    filename = secure_filename(uploaded_file.filename)
+    if filename != '':
+        file_ext = os.path.splitext(filename)[1]
+        if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+            abort(400)
+        uploaded_file.save(os.path.join(app.config['UPLOAD_PATH'], filename))
+    return render_template('index.html')
+
+@app.route('/delete/<fn>', methods=['POST'])
+def del_file(fn):
+    os.remove(os.path.join(app.config['UPLOAD_PATH'], fn))
+    return render_template('index.html')
+
+@app.route('/calc_metrics', methods=['GET'])
+def calc_metrics_func():
+    files = os.listdir(app.config['UPLOAD_PATH'])
+    sorted(filter(os.path.isfile, files), key=os.path.getmtime)
+    metrics = []
+    if len(files) != 2:
+        abort(400)
+    for f in files:
+        #первым брать с меньшей датой записи и относительно него сравнивать
+        file_ext = os.path.splitext(f)[1]
+        if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+            abort(400)
+    f1_name = os.path.join(app.config['UPLOAD_PATH'], files[0])
+    f2_name = os.path.join(app.config['UPLOAD_PATH'], files[1])
+    get_metrics(f1_name, f2_name)
+    filename = 'metrics_res.csv'
+    data = pd.read_csv(filename)
+    metrics = data.values.tolist()
+    html_table = pretty_html_table.build_table(data, 'blue_light')
+    return html_table
+    
 
 #––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 @app.errorhandler(400)

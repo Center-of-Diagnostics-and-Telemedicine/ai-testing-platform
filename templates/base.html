@@ -1,0 +1,14 @@
+<html>
+  <head>
+    {% if title %}
+    <title>{{title}} - masks metrics</title>
+    {% else %}
+    <title>masks metrics</title>
+    {% endif %}
+  </head>
+  <body>
+    <div>Masks metrics: <a href="/ui">Manual test</a> <a href="/api">API</a> </div>
+    <hr>
+    {% block content %}{% endblock %}
+  </body>
+</html>

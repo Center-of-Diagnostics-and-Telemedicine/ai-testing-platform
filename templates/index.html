@@ -1,0 +1,66 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/5.7.1/min/dropzone.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.1.0.min.js"></script>
+
+<script type=text/javascript>
+        $(function() {
+            $('#calc_metrics_func').click(function() {
+                $.ajax({
+                    type: 'GET',
+                    url: '/calc_metrics',
+                    contentType: false,
+                    cache: false,
+                    processData: false,
+                    success: function(response) {
+                        $("#place_for_metrics").html(response);
+                      },
+                      error: function(xhr) {
+                        //Do Something to handle error
+                      }
+                });
+            });
+        });
+</script>
+
+<script type=text/javascript>
+        Dropzone.options.myDropzone = {
+          paramName: "file", // The name that will be used to transfer the file
+          maxThumbnailFilesize: 20,
+          maxFilesize: 10, // MB
+          maxFiles: 2,
+          acceptedFiles: 'image/*',
+          addRemoveLinks: 'True',
+          dictRemoveFile: "Remove",
+          removedfile: function(file) {
+                var name = file.name;        
+                $.ajax({
+                    type: 'POST',
+                    url: 'delete/'+name,
+                    data: "id="+name,
+                    dataType: 'html'
+                });
+                var _ref;
+                return (_ref = file.previewElement) != null ? _ref.parentNode.removeChild(file.previewElement) : void 0;        
+              },
+          maxfilesexceeded: function(file) {
+            this.removeAllFiles();
+            this.addFile(file);
+          }          
+        };
+</script>
+
+
+{% extends "base.html" %}
+{% block content %}
+<h2>Drag and drop masks, one by one, click compare and wait 30-60 sec</h2>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/dropzone/5.7.1/min/dropzone.min.css">
+<body>
+<form action="{{ url_for('upload_files') }}" class="dropzone" id="myDropzone">
+</form>
+
+<button id="calc_metrics_func" type="button">Compare masks</button>
+
+<div id="place_for_metrics"></div>
+
+</body>
+{% endblock %}
+

@@ -244,6 +244,22 @@ def write_img_return_base64(arr2d):
     cv2.imwrite(path, arr2d)
     return base64.b64encode(read_bytes(path)).decode('ascii')
 
+def get_metrics(fname1, fname2):
+    mask_1 = cv2.imread(fname1,0)
+    mask_1 = np.where(mask_1 > 1, 1, mask_1)
+    mask_2 = cv2.imread(fname2,0)
+    mask_2 = np.where(mask_2 > 1, 1, mask_2)
+        
+    ser1 = calc_simple_metrics(mask_1, mask_2)
+    ser2 = averaged_metrics_0(mask_1, mask_2)
+    ser3 = averaged_metrics_1(mask_1, mask_2)
+    ser4 = simple_averaged_metrics_0(mask_1, mask_2)
+    ser5 = simple_averaged_metrics_1(mask_1, mask_2)
+    
+    res = ser1.append([ser2, ser3, ser4, ser5])
+    
+    res.to_csv('metrics_res.csv', index_label = 'metric', header = ['value'])
+
 
 if __name__ == "__main__":
     fname1 = '00000344_003_s1.png'
