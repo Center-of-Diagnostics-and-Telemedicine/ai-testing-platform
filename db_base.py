@@ -1,15 +1,22 @@
 from sqlalchemy import Table, Column, Integer, ForeignKey, String, Float, Boolean, JSON, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, class_mapper
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, func
 from sqlalchemy.exc import OperationalError, IntegrityError
+import sqlalchemy
+
 
 import os
 import json
 import datetime
 import numpy as np
+
+
+def attribute_names(cls):
+    return [prop.key for prop in class_mapper(cls).iterate_properties
+        if isinstance(prop, sqlalchemy.orm.ColumnProperty)]
 
 
 class dbManager:
@@ -86,6 +93,10 @@ class dbManager:
             def __str__(self):
                 return f"{self.id} {self.session} {self.dataset_title} {self.dataset_file_id} {self.created} {self.retrieved} {self.received}"
         
+            def toDict(self):
+                return {k: getattr(self, k)  for k in attribute_names(self.__class__)}
+
+
         self.Test = Test
 
 
@@ -128,11 +139,16 @@ class dbManager:
         ))
         self.commit_and_close()
 
-    def insert_token(self, service_name, session_token):
+    def insert_session_token(
+        self, 
+        service_name, 
+        session_token,
+    ):
         # get service id
         session = self.make_session()
         found_service = session.query(db.Service).filter(db.Service.name == service_name).first()
         if found_service is None:
+            self.commit_and_close()
             raise ValueError(f"There is no service with name: {service_name}")
         
         # insert
@@ -166,6 +182,119 @@ class dbManager:
             var5=var5,
         ))
         self.commit_and_close()
+
+    def insert_test_row(
+        self,
+        service_name,
+        session_token, 
+        dataset_title,
+        filename,
+        created=None,
+        retrieved=None,
+        received=None,
+        ai_ct=None,
+        ai_left_affected_part=None,
+        ai_left_affected_volume=None,
+        ai_left_total_volume=None,
+        ai_right_affected_part=None,
+        ai_right_affected_volume=None,
+        ai_right_total_volume=None,
+        viewer_url=None,
+        description=None,
+        requests=None,
+    ):
+        if created is None:
+            created = datetime.datetime.utcnow()
+
+        the_service = self.get_service(service_name)
+        the_session_token = self.get_session_token(session_token, the_service.id)
+        if the_session_token.active == False:
+            self.commit_and_close()
+            raise ValueError(f"The session is inactive (session_token: {session_token})")
+        the_file = self.get_file(dataset_title, filename)
+
+        self.make_session().add(self.Test(
+            session=the_session_token.id,
+            dataset_title=dataset_title,
+            dataset_file_id=the_file.id,
+            created=created,
+            retrieved=retrieved,
+            ai_ct=ai_ct,
+            ai_left_affected_part=ai_left_affected_part,
+            ai_left_affected_volume=ai_left_affected_volume,
+            ai_left_total_volume=ai_left_total_volume,
+            ai_right_affected_part=ai_right_affected_part,
+            ai_right_affected_volume=ai_right_affected_volume,
+            ai_right_total_volume=ai_right_total_volume,
+            viewer_url=viewer_url,
+            description=description,
+            requests=requests
+        ))
+        self.commit_and_close()
+
+    def get_service(
+        self, 
+        service_name
+    ):
+        session = self.make_session()
+        the_service = session.query(self.Service).filter(self.Service.name==service_name).one_or_none()
+        if the_service is None:
+            self.commit_and_close()
+            raise ValueError(f"Therer is no such a service: {service_name}")
+        return the_service
+
+    def get_session_token(
+        self,
+        session_token,
+        service_id,
+    ):
+        session = self.make_session()
+        the_session = session.query(self.Session_token) \
+                             .filter(self.Session_token.session_token==session_token) \
+                             .filter(self.Session_token.service == service_id) \
+                             .one_or_none()
+        if the_session is None:
+            self.commit_and_close()
+            raise ValueError(f"There is no such a session (session_token: {session_token})")
+        return the_session
+            
+    def get_file(
+        self, 
+        dataset_title,
+        filename,
+    ):
+        session = self.make_session()
+        the_file = session.query(self.Dataset).filter(self.Dataset.title==dataset_title) \
+                                              .filter(self.Dataset.filename==filename)   \
+                                              .one_or_none()
+        if the_file is None:
+            self.commit_and_close()
+            raise ValueError(f"There is no such a file in datasets (title: {dataset_title}, filename: {filename})")
+        return the_file
+
+    def get_test_row(
+        self, 
+        service_name,
+        session_token, 
+        dataset_title,
+        filename,
+    ):
+        the_service = self.get_service(service_name)
+        the_session_token = self.get_session_token(session_token, the_service.id)
+        if the_session_token.active == False:
+            self.commit_and_close()
+            raise ValueError(f"The session is inactive (session_token: {session_token})")
+        the_file = self.get_file(dataset_title, filename)
+
+        the_test_row = self.make_session().query(self.Test).filter(self.Test.session==the_session_token.id) \
+                                               .filter(self.Test.dataset_title==dataset_title)  \
+                                               .filter(self.Test.dataset_file_id==the_file.id)  \
+                                               .one_or_none()
+        if the_test_row is None:
+            self.commit_and_close()
+            raise ValueError(f"There is no such a test row.")
+        return the_test_row
+
 
     def empty(self):
         session = self.make_session()
@@ -207,13 +336,49 @@ def test_session_token_insert(db):
     service_token = 'service_token'
     session_token = 'session_token'
     db.insert_service(service_name, service_token)
-    db.insert_token(service_name, session_token)
+    db.insert_session_token(service_name, session_token)
 
     # check
     session = db.make_session()
-    service = session.query(db.Service).filter(db.Service.name == service_name).one()
-    the_token = session.query(db.Session_token).filter(db.Session_token.service == service.id).one()
+    service = session.query(db.Service).filter(db.Service.name == service_name).one_or_none()
+    the_token = session.query(db.Session_token).filter(db.Session_token.service == service.id).one_or_none()
     assert the_token.session_token == session_token
+
+
+def test_test_row_insert(db):
+    service_name = 'test_service3'
+    service_token = 'service_token'
+    session_token = 'session_token'
+    dataset_title = 'test_dataset_title'
+    filename = 'test_filename'
+    ai_ct = 5
+    db.insert_dataset_file(
+        dataset_title, 
+        filename
+    )
+    db.insert_service(
+        service_name, 
+        service_token
+    )
+    db.insert_session_token(
+        service_name, 
+        session_token
+    )
+    db.insert_test_row(
+        service_name, 
+        session_token,
+        dataset_title,
+        filename,
+        ai_ct=ai_ct,
+    )
+
+    test_row = db.get_test_row(
+        service_name,
+        session_token, 
+        dataset_title,
+        filename
+    )
+    assert test_row.ai_ct == ai_ct
 
 
 if __name__ == "__main__":
@@ -224,11 +389,17 @@ if __name__ == "__main__":
 
     db_path = os.path.join(os.getcwd(), 'test_db.sqlite')
     db = dbManager(db_path)
-    db.empty()
 
     test_service_insert(db)
+    db.empty()
+
     test_dataset_row_insert(db)
+    db.empty()
+
     test_session_token_insert(db)
+    db.empty()
+    
+    test_test_row_insert(db)
+    db.empty()
 
     os.remove(db_path)
-    
